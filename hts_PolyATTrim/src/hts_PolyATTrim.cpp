@@ -31,13 +31,16 @@ int main(int argc, char** argv)
 {
 
     const std::string program_name = "hts_PolyATTrim";
-    std::string app_description =
-                       "hts_PolyATTrim trims poly A and T sequences from a read.\n";
-    app_description += "  It start at either the 5' end or 3' end of a fragment and expands a\n";
-    app_description += "  window towards the center until the max-mismatch-errorDensity parameter is met.\n";
-    app_description += "  and at least perfect-windows of are found. If the window is at least <min-trim> bases long,\n";
-    app_description += "  the window will be trimmed from the read.\n";
-
+    std::string app_description = "hts_PolyATTrim trims poly A and T sequences from a read.\n";
+    app_description += "  The algorithm is borrowed from Fig 2, Bonfert et al. doi: 2017 10.1371/journal.pone.0170914\n";
+    app_description += "  A sliding window of <window-size> (=6) is shifted from either end of the read\n";
+    app_description += "  (adjustable with --no-left and --no-right) until the <max-mismatch-errorDensity> is\n";
+    app_description += "  exceeded. The read is then trimmed as long as the following criteria are met:\n";
+    app_description += "\tat least <perfect-windows> (=1) were observed\n";
+    app_description += "\tat least <min-trim> (=5) bp will be trimmed\n";
+    app_description += "\tno more than <max-trim> (=30) bp will be trimmed\n";
+    app_description += "  These settings may need to be adjusted depending on library type.";
+    
     try
     {
         /** Define and parse the program options
@@ -60,13 +63,13 @@ int main(int argc, char** argv)
             // no-left|l ; no-right|r
 
         desc.add_options()
-            ("skip_polyA,i", po::bool_switch()->default_value(false), "Skip check for polyA sequence")
-            ("skip_polyT,i", po::bool_switch()->default_value(false), "Skip check for polyT sequence")
+            ("skip_polyA,j", po::bool_switch()->default_value(false), "Skip check for polyA sequence")
+            ("skip_polyT,k", po::bool_switch()->default_value(false), "Skip check for polyT sequence")
             ("window-size,w", po::value<size_t>()->default_value(6)->notifier(boost::bind(&check_range<size_t>, "window-size", _1, 1, 10000)),    "Window size in which to trim (min 1, max 10000)")
-            ("max-mismatch-errorDensity,e", po::value<double>()->default_value(.30)->notifier(boost::bind(&check_range<double>, "max-mismatch-errorDensity", _1, 0.0, 1.0)), "Max percent of mismatches allowed in overlapped section (min 0.0, max 1.0)")
-            ("perfect-windows,i", po::value<size_t>()->default_value(1)->notifier(boost::bind(&check_range<size_t>, "perfect-windows", _1, 0, 10000)),    "Number perfect match windows needed before a match is reported  (min 1, max 10000)")
+            ("max-mismatch-errorDensity,e", po::value<double>()->default_value(0.30)->notifier(boost::bind(&check_range<double>, "max-mismatch-errorDensity", _1, 0.0, 1.0)), "Max percent of mismatches allowed in overlapped section (min 0.0, max 1.0)")
+            ("perfect-windows,c", po::value<size_t>()->default_value(1)->notifier(boost::bind(&check_range<size_t>, "perfect-windows", _1, 0, 10000)),    "Number perfect match windows needed before a match is reported  (min 1, max 10000)")
             ("min-trim,M", po::value<size_t>()->default_value(5)->notifier(boost::bind(&check_range<size_t>, "min-trim", _1, 1, 10000)), "Min base pairs trim for AT tail (min 1, max 10000)")
-            ("max-size,x", po::value<size_t>()->default_value(30)->notifier(boost::bind(&check_range<size_t>, "max-size", _1, 0, 10000)), "Max size a polyAT can be (min 0, max 10000)");
+            ("max-trim,x", po::value<size_t>()->default_value(30)->notifier(boost::bind(&check_range<size_t>, "max-trim", _1, 0, 10000)), "Max size a polyAT can be (min 0, max 10000)");
 
         po::options_description cmdline_options;
         cmdline_options.add(standard).add(input).add(output).add(desc);
@@ -101,7 +104,7 @@ int main(int argc, char** argv)
                     bi::stream<bi::file_descriptor_source> is1{check_open_r(read1_files[i]), bi::close_handle};
                     bi::stream<bi::file_descriptor_source> is2{check_open_r(read2_files[i]), bi::close_handle};
                     InputReader<PairedEndRead, PairedEndReadFastqImpl> ifp(is1, is2);
-                    helper_trim(ifp, pe, se, counters, vm["min-length"].as<std::size_t>(), vm["skip_polyA"].as<bool>(), vm["skip_polyT"].as<bool>(), vm["min-trim"].as<std::size_t>(), vm["window-size"].as<std::size_t>(), vm["perfect-windows"].as<std::size_t>(), vm["max-size"].as<std::size_t>(), vm["max-mismatch-errorDensity"].as<double>(), vm["stranded"].as<bool>(), vm["no-left"].as<bool>(), vm["no-right"].as<bool>(), vm["no-orphans"].as<bool>() );
+                    helper_trim(ifp, pe, se, counters, vm["min-length"].as<std::size_t>(), vm["skip_polyA"].as<bool>(), vm["skip_polyT"].as<bool>(), vm["min-trim"].as<std::size_t>(), vm["window-size"].as<std::size_t>(), vm["perfect-windows"].as<std::size_t>(), vm["max-trim"].as<std::size_t>(), vm["max-mismatch-errorDensity"].as<double>(), vm["stranded"].as<bool>(), vm["no-left"].as<bool>(), vm["no-right"].as<bool>(), vm["no-orphans"].as<bool>() );
                 }
             }
             if (vm.count("interleaved-input")) {
@@ -109,7 +112,7 @@ int main(int argc, char** argv)
                 for (auto file : read_files) {
                     bi::stream<bi::file_descriptor_source> inter{ check_open_r(file), bi::close_handle};
                     InputReader<PairedEndRead, InterReadImpl> ifi(inter);
-                    helper_trim(ifi, pe, se, counters, vm["min-length"].as<std::size_t>(), vm["skip_polyA"].as<bool>(), vm["skip_polyT"].as<bool>(), vm["min-trim"].as<std::size_t>(), vm["window-size"].as<std::size_t>(), vm["perfect-windows"].as<std::size_t>(), vm["max-size"].as<std::size_t>(), vm["max-mismatch-errorDensity"].as<double>(), vm["stranded"].as<bool>(), vm["no-left"].as<bool>(), vm["no-right"].as<bool>(), vm["no-orphans"].as<bool>() );
+                    helper_trim(ifi, pe, se, counters, vm["min-length"].as<std::size_t>(), vm["skip_polyA"].as<bool>(), vm["skip_polyT"].as<bool>(), vm["min-trim"].as<std::size_t>(), vm["window-size"].as<std::size_t>(), vm["perfect-windows"].as<std::size_t>(), vm["max-trim"].as<std::size_t>(), vm["max-mismatch-errorDensity"].as<double>(), vm["stranded"].as<bool>(), vm["no-left"].as<bool>(), vm["no-right"].as<bool>(), vm["no-orphans"].as<bool>() );
                 }
             }
             if(vm.count("singleend-input")) {
@@ -117,7 +120,7 @@ int main(int argc, char** argv)
                 for (auto file : read_files) {
                     bi::stream<bi::file_descriptor_source> sef{ check_open_r(file), bi::close_handle};
                     InputReader<SingleEndRead, SingleEndReadFastqImpl> ifs(sef);
-                    helper_trim(ifs, pe, se, counters, vm["min-length"].as<std::size_t>(), vm["skip_polyA"].as<bool>(), vm["skip_polyT"].as<bool>(), vm["min-trim"].as<std::size_t>(), vm["window-size"].as<std::size_t>(), vm["perfect-windows"].as<std::size_t>(), vm["max-size"].as<std::size_t>(), vm["max-mismatch-errorDensity"].as<double>(), vm["stranded"].as<bool>(), vm["no-left"].as<bool>(), vm["no-right"].as<bool>(), vm["no-orphans"].as<bool>() );
+                    helper_trim(ifs, pe, se, counters, vm["min-length"].as<std::size_t>(), vm["skip_polyA"].as<bool>(), vm["skip_polyT"].as<bool>(), vm["min-trim"].as<std::size_t>(), vm["window-size"].as<std::size_t>(), vm["perfect-windows"].as<std::size_t>(), vm["max-trim"].as<std::size_t>(), vm["max-mismatch-errorDensity"].as<double>(), vm["stranded"].as<bool>(), vm["no-left"].as<bool>(), vm["no-right"].as<bool>(), vm["no-orphans"].as<bool>() );
                 }
             }
             if(vm.count("tab-input")) {
@@ -125,13 +128,13 @@ int main(int argc, char** argv)
                 for (auto file : read_files) {
                     bi::stream<bi::file_descriptor_source> tabin{ check_open_r(file), bi::close_handle};
                     InputReader<ReadBase, TabReadImpl> ift(tabin);
-                    helper_trim(ift, pe, se, counters, vm["min-length"].as<std::size_t>(), vm["skip_polyA"].as<bool>(), vm["skip_polyT"].as<bool>(), vm["min-trim"].as<std::size_t>(), vm["window-size"].as<std::size_t>(), vm["perfect-windows"].as<std::size_t>(), vm["max-size"].as<std::size_t>(), vm["max-mismatch-errorDensity"].as<double>(), vm["stranded"].as<bool>(), vm["no-left"].as<bool>(), vm["no-right"].as<bool>(), vm["no-orphans"].as<bool>() );
+                    helper_trim(ift, pe, se, counters, vm["min-length"].as<std::size_t>(), vm["skip_polyA"].as<bool>(), vm["skip_polyT"].as<bool>(), vm["min-trim"].as<std::size_t>(), vm["window-size"].as<std::size_t>(), vm["perfect-windows"].as<std::size_t>(), vm["max-trim"].as<std::size_t>(), vm["max-mismatch-errorDensity"].as<double>(), vm["stranded"].as<bool>(), vm["no-left"].as<bool>(), vm["no-right"].as<bool>(), vm["no-orphans"].as<bool>() );
                 }
             }
             if (!isatty(fileno(stdin))) {
                 bi::stream<bi::file_descriptor_source> tabin {fileno(stdin), bi::close_handle};
                 InputReader<ReadBase, TabReadImpl> ift(tabin);
-                helper_trim(ift, pe, se, counters, vm["min-length"].as<std::size_t>(), vm["skip_polyA"].as<bool>(), vm["skip_polyT"].as<bool>(), vm["min-trim"].as<std::size_t>(), vm["window-size"].as<std::size_t>(), vm["perfect-windows"].as<std::size_t>(), vm["max-size"].as<std::size_t>(), vm["max-mismatch-errorDensity"].as<double>(), vm["stranded"].as<bool>(), vm["no-left"].as<bool>(), vm["no-right"].as<bool>(), vm["no-orphans"].as<bool>() );
+                helper_trim(ift, pe, se, counters, vm["min-length"].as<std::size_t>(), vm["skip_polyA"].as<bool>(), vm["skip_polyT"].as<bool>(), vm["min-trim"].as<std::size_t>(), vm["window-size"].as<std::size_t>(), vm["perfect-windows"].as<std::size_t>(), vm["max-trim"].as<std::size_t>(), vm["max-mismatch-errorDensity"].as<double>(), vm["stranded"].as<bool>(), vm["no-left"].as<bool>(), vm["no-right"].as<bool>(), vm["no-orphans"].as<bool>() );
             }
             counters.write_out();
         }

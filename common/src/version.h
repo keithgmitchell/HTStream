@@ -1,5 +1,5 @@
 #ifndef VERSION_H
 #define VERSION_H
 
-#define VERSION "1.1.0-release"
+#define VERSION "1.1.1-release"
 #endif
